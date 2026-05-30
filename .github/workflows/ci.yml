@@ -17,7 +17,7 @@ on:
         default: false
         required: false
 
-        jobs:
+jobs:
   lint-typecheck:
     runs-on: ubuntu-latest
     steps:
@@ -104,4 +104,3 @@ on:
         run: |
           echo "Tests failed!"
           exit 1
-
