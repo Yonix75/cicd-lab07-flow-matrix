@@ -1,0 +1,107 @@
+name: CI Flow Matrix
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      fail_mode:
+        description: 'Enable fail mode'
+        type: boolean
+        default: false
+        required: false
+      flaky_mode:
+        description: 'Enable flaky mode'
+        type: boolean
+        default: false
+        required: false
+
+        jobs:
+  lint-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+  test:
+    needs: lint-typecheck
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [20, 22]
+        include:
+          - os: ubuntu-latest
+            node: 18
+            experimental: true
+    continue-on-error: ${{ matrix.experimental == true }}
+    outputs:
+      result: ${{ steps.test-step.outcome }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        id: test-step
+        run: npm test
+        env:
+          FAIL_MODE: ${{ inputs.fail_mode == true && '1' || '0' }}
+          FLAKY_MODE: ${{ inputs.flaky_mode == true && '1' || '0' }}
+
+      - name: Success
+        if: success()
+        run: echo "Tests passed on Node ${{ matrix.node }} / ${{ matrix.os }}"
+
+      - name: Failure diagnostics
+        if: failure()
+        run: |
+          echo "Tests failed"
+          echo "Matrix: node=${{ matrix.node }} os=${{ matrix.os }}"
+          node --version
+          echo "OS: ${{ matrix.os }}"
+
+      - name: Cleanup
+        if: always()
+        run: echo "Cleanup done"
+
+  report:
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report success
+        if: needs.test.result == 'success'
+        run: echo "All tests passed!"
+
+      - name: Report failure
+        if: needs.test.result != 'success'
+        run: |
+          echo "Tests failed!"
+          exit 1
+
